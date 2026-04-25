@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // base is '/AI-Trading-Platform/' on GitHub Pages, '/' everywhere else
+  base: process.env.VITE_BASE_URL || '/',
   build: {
     outDir: 'dist',
     sourcemap: false,

@@ -14,6 +14,7 @@ log_main = logging.getLogger("trading-loop")
 # ===== IMPORTS =====
 from engine import run_multi_signal_pipeline, build_state_map, fetch_all, TradeLog
 from engine.multi_signal_engine import rank_signals, filter_best_signals
+from engine.live_data import mock_fetch_all
 
 # ===== TIMEZONE =====
 IST = pytz.timezone("Asia/Kolkata")
@@ -65,25 +66,28 @@ def write_state_atomic(state: dict):
 
 
 # ===== MAIN LOOP =====
-def live_loop():
-    _dbg("live_loop_enter", {"argv": sys.argv, "cwd": os.getcwd(), "base_dir": BASE_DIR, "state_file": LIVE_STATE_FILE}, hypothesisId="H1")
+def live_loop(mock: bool = False):
+    _dbg("live_loop_enter", {"argv": sys.argv, "cwd": os.getcwd(), "base_dir": BASE_DIR, "state_file": LIVE_STATE_FILE, "mock": mock}, hypothesisId="H1")
     state_map = build_state_map()
     log = TradeLog()
 
     candle = 0
-
-    print("\n🚀 LIVE LOOP STARTED\n")
+    mode_label = "MOCK" if mock else "LIVE"
+    print(f"\n🚀 TRADING LOOP STARTED [{mode_label}]\n")
 
     while True:
         candle += 1
         now = datetime.now(IST)
 
         try:
-            print(f"\n===== Candle {candle} =====")
-            _dbg("candle_begin", {"candle": candle, "now": now.isoformat()}, hypothesisId="H0")
+            print(f"\n===== Candle {candle} [{mode_label}] =====")
+            _dbg("candle_begin", {"candle": candle, "now": now.isoformat(), "mock": mock}, hypothesisId="H0")
 
-            # 1. Fetch data
-            data = fetch_all()
+            # 1. Fetch data — mock uses synthetic data; live uses yfinance
+            if mock:
+                data = mock_fetch_all()
+            else:
+                data = fetch_all()
             _dbg("fetch_all_done", {"candle": candle, "symbols": list(data.keys()), "n_nonnull": sum(1 for v in data.values() if v is not None)}, hypothesisId="H2")
 
             # 2. Run pipeline
@@ -135,9 +139,10 @@ def live_loop():
 # ===== ENTRY =====
 if __name__ == "__main__":
     _dbg("main_entry", {"argv": sys.argv}, hypothesisId="H1")
-    # Accept both --live and --mock (Render runs with --mock by default)
-    if "--live" in sys.argv or "--mock" in sys.argv:
-        live_loop()
+    if "--live" in sys.argv:
+        live_loop(mock=False)
+    elif "--mock" in sys.argv:
+        live_loop(mock=True)
     else:
         print("Run with: python main.py --live  (or --mock)")
         _dbg("main_exit_no_mode_flag", {"argv": sys.argv}, hypothesisId="H1")

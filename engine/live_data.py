@@ -142,3 +142,101 @@ def fetch_all():
     for name, ticker in SYMBOLS.items():
         results[name] = fetch_symbol(ticker)
     return results
+
+
+# ── Mock data generator (used when --mock flag is set) ────────
+# Generates realistic synthetic OHLCV data so the trading loop
+# produces real signals even when yfinance is blocked (e.g. on Render).
+
+import math
+import random
+
+# Base prices for each symbol (realistic NSE values)
+_MOCK_BASE = {
+    "NIFTY":     23500.0,
+    "BANKNIFTY": 50200.0,
+    "RELIANCE":  1320.0,
+    "HDFCBANK":  1620.0,
+    "ICICIBANK": 1210.0,
+    "INFY":      1720.0,
+    "TCS":       4050.0,
+}
+
+# Per-symbol random walk state (persists across candles)
+_mock_state: dict = {}
+
+
+def _mock_fetch_symbol(name: str) -> dict:
+    """Generate a synthetic market snapshot that mimics real fetch_symbol output."""
+    base = _MOCK_BASE.get(name, 1000.0)
+
+    # Persistent random walk: each candle drifts ±0.3% from last price
+    if name not in _mock_state:
+        _mock_state[name] = {
+            "price": base,
+            "candle": 0,
+            "trend": random.choice([-1, 1]),      # bull or bear trend
+            "trend_life": random.randint(3, 10),   # how long trend lasts
+        }
+
+    st = _mock_state[name]
+    st["candle"] += 1
+
+    # Flip trend occasionally
+    if st["candle"] % st["trend_life"] == 0:
+        st["trend"] = random.choice([-1, 1])
+        st["trend_life"] = random.randint(3, 10)
+
+    # Price: trend bias + small random noise
+    drift = st["trend"] * random.uniform(0.05, 0.3)    # % move per candle
+    noise = random.gauss(0, 0.15)
+    pct_move = (drift + noise) / 100.0
+    prev_price = st["price"]
+    new_price = round(prev_price * (1 + pct_move), 2)
+    st["price"] = new_price
+
+    price = new_price
+    price_change = pct_move * 100
+
+    # Simulate 20 historical closes for EMA calculation
+    history = [base]
+    for _ in range(19):
+        history.append(round(history[-1] * (1 + random.gauss(0, 0.002)), 2))
+    history.append(price)
+
+    # EMA helper (fast inline)
+    def _ema_from_list(prices: list, span: int) -> float:
+        k = 2 / (span + 1)
+        ema = prices[0]
+        for p in prices[1:]:
+            ema = p * k + ema * (1 - k)
+        return round(ema, 2)
+
+    ema9  = _ema_from_list(history, 9)
+    ema21 = _ema_from_list(history, 21)
+
+    # VWAP: slightly above/below price depending on trend
+    vwap_offset = st["trend"] * random.uniform(0.05, 0.2) / 100
+    vwap = round(price * (1 + vwap_offset), 2)
+
+    # Volume: indices have 0 volume (matches real yfinance behaviour)
+    if name in ("NIFTY", "BANKNIFTY"):
+        volume = avg_vol = 500000.0
+    else:
+        avg_vol = random.uniform(800_000, 3_000_000)
+        volume  = avg_vol * random.uniform(0.7, 1.5)
+
+    return {
+        "price":        price,
+        "vwap":         vwap,
+        "ema9":         ema9,
+        "ema21":        ema21,
+        "volume":       round(volume, 0),
+        "avg_volume":   round(avg_vol, 0),
+        "price_change": round(price_change, 4),
+    }
+
+
+def mock_fetch_all() -> dict:
+    """Return synthetic data for every symbol. Never calls yfinance."""
+    return {name: _mock_fetch_symbol(name) for name in _MOCK_BASE}
