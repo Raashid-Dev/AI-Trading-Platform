@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import sys
 import time
 import json
@@ -47,6 +48,7 @@ def _dbg(message: str, data: Optional[dict] = None, *, hypothesisId: str = "H0",
         pass
 # #endregion
 
+
 # ===== SAFE WRITE FUNCTION =====
 def write_state_atomic(state: dict):
     try:
@@ -65,6 +67,48 @@ def write_state_atomic(state: dict):
         _dbg("state_write_error", {"path": LIVE_STATE_FILE, "error": repr(e)}, hypothesisId="H4")
 
 
+def _mock_manual_inputs() -> dict:
+    """
+    Randomised macro inputs for mock mode so the scorer produces
+    a wide range of signal strengths — including ones that pass
+    the confidence / score filters.
+
+    Cycles through bullish / bearish / neutral stances to ensure
+    real signals appear within a few candles.
+    """
+    # Pick a random market stance
+    stance = random.choice(["BULL", "BEAR", "NEUTRAL"])
+
+    if stance == "BULL":
+        pcr        = round(random.uniform(0.5, 0.79), 2)   # < 0.8 → +3
+        fii_net_cr = round(random.uniform(500, 1500), 0)   # > 500 → +3
+        oi_bias    = random.choice([0, 1])                 # 0 or +3
+        crude      = round(random.uniform(-2, 0), 2)       # crude down → macro +1
+        dxy        = round(random.uniform(-1, 0), 2)
+    elif stance == "BEAR":
+        pcr        = round(random.uniform(1.21, 2.0), 2)   # > 1.2 → -3
+        fii_net_cr = round(random.uniform(-1500, -500), 0) # < -500 → -3
+        oi_bias    = random.choice([0, -1])                # 0 or -3
+        crude      = round(random.uniform(0, 2), 2)
+        dxy        = round(random.uniform(0, 1), 2)
+    else:  # NEUTRAL
+        pcr        = round(random.uniform(0.8, 1.2), 2)
+        fii_net_cr = round(random.uniform(-400, 400), 0)
+        oi_bias    = 0
+        crude      = round(random.uniform(-0.5, 0.5), 2)
+        dxy        = round(random.uniform(-0.5, 0.5), 2)
+
+    return {
+        "pcr":              pcr,
+        "fii_net_cr":       fii_net_cr,
+        "oi_bias":          oi_bias,
+        "crude_change":     crude,
+        "dxy_change":       dxy,
+        "india_vix":        round(random.uniform(13.0, 18.0), 1),
+        "expiry_days_left": random.randint(1, 3),
+    }
+
+
 # ===== MAIN LOOP =====
 def live_loop(mock: bool = False):
     _dbg("live_loop_enter", {"argv": sys.argv, "cwd": os.getcwd(), "base_dir": BASE_DIR, "state_file": LIVE_STATE_FILE, "mock": mock}, hypothesisId="H1")
@@ -74,6 +118,13 @@ def live_loop(mock: bool = False):
     candle = 0
     mode_label = "MOCK" if mock else "LIVE"
     print(f"\n🚀 TRADING LOOP STARTED [{mode_label}]\n")
+
+    # Write initial state immediately so dashboard shows correct capital on startup
+    try:
+        write_state_atomic(log.export_state())
+        print("[INIT] Initial state written — capital ready.")
+    except Exception as e:
+        print(f"[INIT] Could not write initial state: {e}")
 
     while True:
         candle += 1
@@ -90,9 +141,8 @@ def live_loop(mock: bool = False):
                 data = fetch_all()
             _dbg("fetch_all_done", {"candle": candle, "symbols": list(data.keys()), "n_nonnull": sum(1 for v in data.values() if v is not None)}, hypothesisId="H2")
 
-            # 2. Run pipeline
-            # Default manual inputs (until wired to real sources / UI inputs)
-            manual_inputs = {
+            # 2. Build manual inputs
+            manual_inputs = _mock_manual_inputs() if mock else {
                 "pcr": 1.0,
                 "fii_net_cr": 0.0,
                 "oi_bias": 0,
@@ -101,32 +151,26 @@ def live_loop(mock: bool = False):
                 "india_vix": 15.0,
                 "expiry_days_left": 1,
             }
-            results = run_multi_signal_pipeline(
-                data,
-                manual_inputs,
-                now,
-                state_map
-            )
+            print(f"[INPUTS] stance implied by pcr={manual_inputs['pcr']}  fii={manual_inputs['fii_net_cr']}")
+
+            results = run_multi_signal_pipeline(data, manual_inputs, now, state_map)
             _dbg("pipeline_done", {"candle": candle, "result_keys": list(results.keys())[:20]}, hypothesisId="H3")
 
             if not results:
-                print("No results...")
+                print("No results from pipeline — sleeping.")
                 time.sleep(LIVE_INTERVAL_SECONDS)
                 continue
 
             # 3. Rank + filter
             ranked = rank_signals(results)
-            best = filter_best_signals(ranked, results=results)
+            best   = filter_best_signals(ranked, results=results)
+            print(f"[SIGNALS] ranked={len(ranked)}  best={len(best)}")
             _dbg("filter_done", {"candle": candle, "ranked": len(ranked), "best": len(best)}, hypothesisId="H0")
 
-            # 4. Store in log
+            # 4. Store + export state
             log.set_latest_signals(best)
-
-            # 5. Export state (THIS IS WHAT UI READS)
             snapshot = log.export_state()
-
-            print("[DEBUG] Snapshot keys:", snapshot.keys())
-
+            print(f"[STATE] capital={snapshot.get('capital', {}).get('capital')}  signals={len(snapshot.get('signals', []))}")
             write_state_atomic(snapshot)
 
         except Exception as e:
