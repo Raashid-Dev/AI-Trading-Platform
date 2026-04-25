@@ -269,4 +269,17 @@ async def start_background_tasks():
     asyncio.create_task(_file_watcher())
     asyncio.create_task(_heartbeat_task())
 
+    # ── Start trading loop as a daemon thread ─────────────────
+    # Running inside the server process guarantees logs are visible
+    # and eliminates the "silent bash background process" failure mode.
+    import threading
+    try:
+        from main import live_loop
+        mock = os.getenv("TRADING_MODE", "mock").lower() != "live"
+        t = threading.Thread(target=live_loop, args=(mock,), daemon=True, name="trading-loop")
+        t.start()
+        log.info("Trading loop thread started  mock=%s  pid=%s", mock, os.getpid())
+    except Exception as exc:
+        log.error("Failed to start trading loop thread: %s", exc)
+
     log.info("Server started (watcher + heartbeat ready)")

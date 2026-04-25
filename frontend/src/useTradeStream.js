@@ -26,12 +26,14 @@ const WS_MAX_RETRIES = 8;
 const WS_RETRY_FROM_POLL_MS = 30_000;
 
 const EMPTY_STATE = {
-  capital:       { capital: 0, max_capital: 0, drawdown_pct: 0 },
-  signals:       [],
-  open_trades:   [],
-  closed_trades: [],
-  performance:   {},
-  diagnostics:   {},
+  capital:         { capital: 0, max_capital: 0, drawdown_pct: 0 },
+  signals:         [],
+  open_trades:     [],
+  closed_trades:   [],
+  performance:     {},
+  diagnostics:     {},
+  price_history:   {},
+  symbol_snapshot: {},
 };
 
 // ── Hook ───────────────────────────────────────────────────

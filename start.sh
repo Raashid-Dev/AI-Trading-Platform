@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# start.sh — single-container entrypoint for Render.
+# start.sh — Render entrypoint.
 #
-# Launches the trading loop in the background, then starts the FastAPI server
-# in the foreground.  Both processes share the same filesystem so
-# live_state.json is visible to both.
+# The trading loop now runs as a daemon thread INSIDE the FastAPI process
+# (started from server.py on_event("startup")).
+# This gives us a single process, unified logs, and no silent background crashes.
 #
 # Environment variables:
-#   TRADING_MODE   "live" (real yfinance data) or "mock" (simulated)
-#                  defaults to "mock" — safer for first deploy
+#   TRADING_MODE   "live" | "mock"  (default: mock)
 #   PORT           set automatically by Render
-#   LIVE_STATE_FILE path to state file (default: live_state.json)
 
 set -e
 
@@ -22,16 +20,7 @@ echo " Mode  : $TRADING_MODE"
 echo " Port  : $PORT"
 echo "========================================"
 
-# Start the trading loop as a background process
-echo "[start.sh] Starting trading loop ($TRADING_MODE)..."
-PY="${PYTHON_BIN:-./venv/bin/python}"
-if [ ! -x "$PY" ]; then
-  PY="python"
-fi
-"$PY" main.py --${TRADING_MODE} &
-LOOP_PID=$!
-echo "[start.sh] Trading loop PID: $LOOP_PID"
+PY="${PYTHON_BIN:-python}"
 
-# Start the FastAPI server in the foreground (Render monitors this process)
-echo "[start.sh] Starting FastAPI server on port $PORT..."
+echo "[start.sh] Starting FastAPI server + trading loop on port $PORT..."
 exec "$PY" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"
