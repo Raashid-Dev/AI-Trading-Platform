@@ -224,8 +224,13 @@ async def websocket_endpoint(ws: WebSocket):
 
     try:
         while True:
-            await asyncio.wait_for(ws.receive_text(), timeout=20)
-    except (WebSocketDisconnect, asyncio.TimeoutError):
+            # Client may not send messages; keep socket open.
+            # Heartbeats are sent server->client by _heartbeat_task().
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=60)
+            except asyncio.TimeoutError:
+                continue
+    except WebSocketDisconnect:
         _clients.discard(ws)
 
 # ─────────────────────────────────────────────
