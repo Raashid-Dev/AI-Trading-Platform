@@ -24,10 +24,14 @@ echo "========================================"
 
 # Start the trading loop as a background process
 echo "[start.sh] Starting trading loop ($TRADING_MODE)..."
-python main.py --${TRADING_MODE} &
+PY="${PYTHON_BIN:-./venv/bin/python}"
+if [ ! -x "$PY" ]; then
+  PY="python"
+fi
+"$PY" main.py --${TRADING_MODE} &
 LOOP_PID=$!
 echo "[start.sh] Trading loop PID: $LOOP_PID"
 
 # Start the FastAPI server in the foreground (Render monitors this process)
 echo "[start.sh] Starting FastAPI server on port $PORT..."
-exec uvicorn server:app --host 0.0.0.0 --port "$PORT"
+exec "$PY" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"

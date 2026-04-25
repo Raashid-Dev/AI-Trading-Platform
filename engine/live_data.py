@@ -15,6 +15,9 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 from typing import Optional
+import os
+import json
+import time
 
 SYMBOLS = {
     "NIFTY": "^NSEI",
@@ -32,6 +35,26 @@ EMA_SHORT = 9
 EMA_LONG = 21
 AVG_VOL_LOOKBACK = 10
 MIN_CANDLES = 5
+
+
+ # #region agent log
+_DBG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".cursor", "debug-afaa4d.log")
+def _dbg(message: str, data: dict, *, hypothesisId: str = "H2", runId: str = "pre-fix"):
+    try:
+        payload = {
+            "sessionId": "afaa4d",
+            "runId": runId,
+            "hypothesisId": hypothesisId,
+            "location": "engine/live_data.py",
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with open(_DBG_PATH, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+ # #endregion
 
 
 def _vwap(df):
@@ -56,6 +79,8 @@ def _avg_volume(df):
 def fetch_symbol(ticker: str) -> Optional[dict]:
     import yfinance as yf
 
+    t0 = time.time()
+    _dbg("yf_download_begin", {"ticker": ticker, "period": PERIOD, "interval": INTERVAL}, hypothesisId="H2")
     df = yf.download(
         ticker,
         period=PERIOD,
@@ -63,6 +88,7 @@ def fetch_symbol(ticker: str) -> Optional[dict]:
         progress=False,
         auto_adjust=True,
     )
+    _dbg("yf_download_end", {"ticker": ticker, "elapsed_s": round(time.time() - t0, 3), "rows": int(getattr(df, "shape", (0, 0))[0] or 0)}, hypothesisId="H2")
 
     if hasattr(df.columns, "levels"):
         df.columns = df.columns.get_level_values(0)

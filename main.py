@@ -5,6 +5,7 @@ import time
 import json
 from datetime import datetime
 import pytz
+from typing import Optional
 
 # ===== LOGGING =====
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +27,25 @@ LIVE_STATE_FILE = os.path.join(BASE_DIR, "live_state.json")
 
 print(f"[INIT] State file path: {LIVE_STATE_FILE}")
 
+# #region agent log
+_DBG_PATH = os.path.join(BASE_DIR, ".cursor", "debug-afaa4d.log")
+def _dbg(message: str, data: Optional[dict] = None, *, hypothesisId: str = "H0", runId: str = "pre-fix"):
+    try:
+        payload = {
+            "sessionId": "afaa4d",
+            "runId": runId,
+            "hypothesisId": hypothesisId,
+            "location": "main.py",
+            "message": message,
+            "data": data or {},
+            "timestamp": int(time.time() * 1000),
+        }
+        with open(_DBG_PATH, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+# #endregion
+
 # ===== SAFE WRITE FUNCTION =====
 def write_state_atomic(state: dict):
     try:
@@ -37,13 +57,16 @@ def write_state_atomic(state: dict):
         os.replace(tmp_file, LIVE_STATE_FILE)
 
         print(f"[STATE WRITE] Success at {datetime.now()}")
+        _dbg("state_write_success", {"path": LIVE_STATE_FILE, "keys": list(state.keys())}, hypothesisId="H4")
 
     except Exception as e:
         print(f"[STATE ERROR] {e}")
+        _dbg("state_write_error", {"path": LIVE_STATE_FILE, "error": repr(e)}, hypothesisId="H4")
 
 
 # ===== MAIN LOOP =====
 def live_loop():
+    _dbg("live_loop_enter", {"argv": sys.argv, "cwd": os.getcwd(), "base_dir": BASE_DIR, "state_file": LIVE_STATE_FILE}, hypothesisId="H1")
     state_map = build_state_map()
     log = TradeLog()
 
@@ -57,17 +80,30 @@ def live_loop():
 
         try:
             print(f"\n===== Candle {candle} =====")
+            _dbg("candle_begin", {"candle": candle, "now": now.isoformat()}, hypothesisId="H0")
 
             # 1. Fetch data
             data = fetch_all()
+            _dbg("fetch_all_done", {"candle": candle, "symbols": list(data.keys()), "n_nonnull": sum(1 for v in data.values() if v is not None)}, hypothesisId="H2")
 
             # 2. Run pipeline
+            # Default manual inputs (until wired to real sources / UI inputs)
+            manual_inputs = {
+                "pcr": 1.0,
+                "fii_net_cr": 0.0,
+                "oi_bias": 0,
+                "crude_change": 0.0,
+                "dxy_change": 0.0,
+                "india_vix": 15.0,
+                "expiry_days_left": 1,
+            }
             results = run_multi_signal_pipeline(
                 data,
-                {},  # manual inputs optional
+                manual_inputs,
                 now,
                 state_map
             )
+            _dbg("pipeline_done", {"candle": candle, "result_keys": list(results.keys())[:20]}, hypothesisId="H3")
 
             if not results:
                 print("No results...")
@@ -77,6 +113,7 @@ def live_loop():
             # 3. Rank + filter
             ranked = rank_signals(results)
             best = filter_best_signals(ranked, results=results)
+            _dbg("filter_done", {"candle": candle, "ranked": len(ranked), "best": len(best)}, hypothesisId="H0")
 
             # 4. Store in log
             log.set_latest_signals(best)
@@ -90,13 +127,17 @@ def live_loop():
 
         except Exception as e:
             log_main.error(f"Loop error: {e}", exc_info=True)
+            _dbg("loop_exception", {"candle": candle, "error": repr(e)}, hypothesisId="H3")
 
         time.sleep(LIVE_INTERVAL_SECONDS)
 
 
 # ===== ENTRY =====
 if __name__ == "__main__":
-    if "--live" in sys.argv:
+    _dbg("main_entry", {"argv": sys.argv}, hypothesisId="H1")
+    # Accept both --live and --mock (Render runs with --mock by default)
+    if "--live" in sys.argv or "--mock" in sys.argv:
         live_loop()
     else:
-        print("Run with: python main.py --live")
+        print("Run with: python main.py --live  (or --mock)")
+        _dbg("main_exit_no_mode_flag", {"argv": sys.argv}, hypothesisId="H1")

@@ -20,9 +20,29 @@ import time
 import threading
 from typing import Dict, Any
 from collections import defaultdict
+from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+
+# #region agent log
+_DBG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cursor", "debug-afaa4d.log")
+def _dbg(message: str, data: Optional[dict] = None, *, hypothesisId: str = "H0", runId: str = "pre-fix"):
+    try:
+        payload = {
+            "sessionId": "afaa4d",
+            "runId": runId,
+            "hypothesisId": hypothesisId,
+            "location": "server.py",
+            "message": message,
+            "data": data or {},
+            "timestamp": int(time.time() * 1000),
+        }
+        with open(_DBG_PATH, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+# #endregion
 
 # ─────────────────────────────────────────────
 # LOGGING
@@ -36,8 +56,14 @@ log = logging.getLogger("server")
 # ─────────────────────────────────────────────
 # ENV CONFIG
 # ─────────────────────────────────────────────
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LIVE_STATE_FILE = os.getenv("LIVE_STATE_FILE", "live_state.json")
+# If LIVE_STATE_FILE is relative, resolve next to this file.
+# This avoids cwd-dependent mismatches between the loop and API server.
+if not os.path.isabs(LIVE_STATE_FILE):
+    LIVE_STATE_FILE = os.path.join(_BASE_DIR, LIVE_STATE_FILE)
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+_dbg("server_boot", {"live_state_file": LIVE_STATE_FILE, "allowed_origins": ALLOWED_ORIGINS, "cwd": os.getcwd()}, hypothesisId="H5")
 
 # ─────────────────────────────────────────────
 # FASTAPI INIT
@@ -58,6 +84,8 @@ app.add_middleware(
 _clients = set()
 _last_valid_state: Dict[str, Any] = {}
 _last_update_time = None
+_loop_started = False
+_loop_lock = threading.Lock()
 
 # ─────────────────────────────────────────────
 # SAFE FILE READ
@@ -70,9 +98,11 @@ def _load_state_safe():
             with open(LIVE_STATE_FILE, "r") as f:
                 data = json.load(f)
                 _last_valid_state = data
+                _dbg("state_read_ok", {"path": LIVE_STATE_FILE, "keys": list(data.keys())}, hypothesisId="H5")
                 return data
     except Exception as e:
         log.warning(f"State read failed, using last valid: {e}")
+        _dbg("state_read_error", {"path": LIVE_STATE_FILE, "error": repr(e)}, hypothesisId="H5")
 
     return _last_valid_state
 
@@ -111,6 +141,7 @@ async def _file_watcher():
         await asyncio.sleep(2)
 
         if not os.path.exists(LIVE_STATE_FILE):
+            _dbg("watch_missing_state_file", {"path": LIVE_STATE_FILE}, hypothesisId="H5")
             continue
 
         mtime = os.path.getmtime(LIVE_STATE_FILE)
@@ -119,6 +150,7 @@ async def _file_watcher():
             last_mtime = mtime
             data = _load_state_safe()
             await _broadcast(data)
+            _dbg("watch_broadcast", {"path": LIVE_STATE_FILE, "mtime": mtime, "n_clients": len(_clients)}, hypothesisId="H5")
 
 # ─────────────────────────────────────────────
 # RATE LIMIT (10 req/sec)
@@ -201,19 +233,28 @@ async def websocket_endpoint(ws: WebSocket):
 # ─────────────────────────────────────────────
 def _start_trading_loop():
     try:
+        _dbg("start_trading_loop_thread_enter", {}, hypothesisId="H6")
         import main
         log.info("🚀 Starting trading loop...")
         main.live_loop()
     except Exception as e:
         log.error(f"❌ Trading loop crashed: {e}", exc_info=True)
+        _dbg("start_trading_loop_thread_exception", {"error": repr(e)}, hypothesisId="H6")
 
 # ─────────────────────────────────────────────
 # 🔥 MANUAL START ENDPOINT (RENDER FREE FIX)
 # ─────────────────────────────────────────────
 @app.get("/start")
 def start_loop():
-    threading.Thread(target=_start_trading_loop, daemon=True).start()
-    return {"status": "started"}
+    global _loop_started
+    with _loop_lock:
+        if _loop_started:
+            _dbg("start_loop_ignored_already_running", {}, hypothesisId="H6")
+            return {"status": "already_running"}
+        _loop_started = True
+        _dbg("start_loop_thread_spawn", {}, hypothesisId="H6")
+        threading.Thread(target=_start_trading_loop, daemon=True).start()
+        return {"status": "started"}
 
 # ─────────────────────────────────────────────
 # STARTUP TASKS
