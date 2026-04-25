@@ -1,0 +1,23 @@
+# render.yaml — single web service running both the server and trading loop.
+# Both share the same container filesystem so live_state.json works correctly.
+#
+# Free tier note: Render free web services spin down after 15 min of inactivity.
+# The trading loop also stops when the service sleeps. Upgrade to Starter ($7/mo)
+# for always-on operation.
+#
+# After first deploy, update ALLOWED_ORIGINS to your actual frontend URL.
+
+services:
+  - type: web
+    name: ai-trading-backend
+    runtime: python
+    region: singapore           # closest to India (or use oregon / frankfurt)
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    envVars:
+      - key: TRADING_MODE
+        value: mock             # change to "live" for real yfinance data
+      - key: ALLOWED_ORIGINS
+        value: "*"              # tighten to your Vercel URL once deployed
+      - key: LIVE_STATE_FILE
+        value: live_state.json
