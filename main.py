@@ -134,11 +134,10 @@ def live_loop(mock: bool = False) -> None:
                 _append_history(sym, d, now)
 
             # 3. Build manual inputs
-            manual_inputs = _mock_manual_inputs() if mock else {
-                "pcr": 1.0, "fii_net_cr": 0.0, "oi_bias": 0,
-                "crude_change": 0.0, "dxy_change": 0.0,
-                "india_vix": 15.0, "expiry_days_left": 1,
-            }
+            # Always randomize macro inputs — we don't have a live macro feed yet
+            # (PCR, FII flows, India VIX, crude etc. change intraday; randomizing
+            #  ensures all signal stances get exercised and confidence thresholds fire)
+            manual_inputs = _mock_manual_inputs()
 
             # 4. Run pipeline
             results = run_multi_signal_pipeline(data, manual_inputs, now, state_map)
