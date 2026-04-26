@@ -13,7 +13,31 @@ import time
 import math
 import random
 import logging
+import pytz
+from datetime import datetime, time as dtime
 from typing import Optional
+
+# ── Market hours (NSE: Mon–Fri 09:15–15:30 IST) ──────────────────────────────
+_IST       = pytz.timezone("Asia/Kolkata")
+_NSE_OPEN  = dtime(9, 15)
+_NSE_CLOSE = dtime(15, 30)
+
+
+def get_market_status() -> str:
+    """Returns 'OPEN', 'PRE_MARKET', 'AFTER_HOURS', or 'CLOSED' (weekend)."""
+    now = datetime.now(_IST)
+    if now.weekday() >= 5:
+        return "CLOSED"
+    t = now.time()
+    if t < _NSE_OPEN:
+        return "PRE_MARKET"
+    if t > _NSE_CLOSE:
+        return "AFTER_HOURS"
+    return "OPEN"
+
+
+def is_market_open() -> bool:
+    return get_market_status() == "OPEN"
 
 log = logging.getLogger("live_data")
 
@@ -244,6 +268,20 @@ def _mock_fetch_symbol(name: str) -> dict:
         }
 
     st = _mock_state[name]
+
+    # ── Freeze random walk when market is closed ──────────────
+    if not is_market_open() and st["candle"] > 0:
+        price = st["price"]
+        return {
+            "price":        price,
+            "vwap":         price,
+            "ema9":         price,
+            "ema21":        price,
+            "volume":       0.0,
+            "avg_volume":   0.0,
+            "price_change": 0.0,
+        }
+
     st["candle"] += 1
     if st["candle"] % st["trend_life"] == 0:
         st["trend"]      = random.choice([-1, 1])

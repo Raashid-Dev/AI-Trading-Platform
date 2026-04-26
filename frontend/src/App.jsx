@@ -10,6 +10,7 @@ import NewsPage     from './pages/NewsPage';
 export default function App() {
   const { state, connected, transport, lastUpdate, error } = useTradeStream();
   const [page, setPage] = useState('market');
+  const marketStatus = state.market_status || 'CLOSED';
 
   const renderPage = () => {
     switch (page) {
@@ -32,6 +33,7 @@ export default function App() {
           transport={transport}
           page={page}
           onPageChange={setPage}
+          marketStatus={marketStatus}
         />
 
         {/* Connection banners */}

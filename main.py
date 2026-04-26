@@ -16,7 +16,7 @@ log_main = logging.getLogger("trading-loop")
 # ===== IMPORTS =====
 from engine import run_multi_signal_pipeline, build_state_map, fetch_all, TradeLog
 from engine.multi_signal_engine import rank_signals, filter_best_signals
-from engine.live_data import mock_fetch_all
+from engine.live_data import mock_fetch_all, get_market_status
 
 # ===== TIMEZONE =====
 IST = pytz.timezone("Asia/Kolkata")
@@ -177,6 +177,7 @@ def live_loop(mock: bool = False) -> None:
             snapshot["price_history"]   = _serialize_history()
             snapshot["symbol_snapshot"] = symbol_snapshot
             snapshot["manual_inputs"]   = manual_inputs
+            snapshot["market_status"]   = get_market_status()
             write_state_atomic(snapshot)
 
         except Exception as e:
