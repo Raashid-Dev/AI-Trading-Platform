@@ -27,7 +27,7 @@ const NAV_PAGES = [
   { id: 'news',      label: 'News',      icon: '📰' },
 ];
 
-export default function Header({ connected, lastUpdate, transport = 'connecting', page, onPageChange, marketStatus }) {
+export default function Header({ connected, lastUpdate, transport = 'connecting', page, onPageChange, marketStatus, onHome }) {
   const timeStr = lastUpdate
     ? lastUpdate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : null;
@@ -42,9 +42,11 @@ export default function Header({ connected, lastUpdate, transport = 'connecting'
         {/* Top row */}
         <div className="flex items-center justify-between py-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white font-black text-xs shadow-lg">
+            <button onClick={onHome}
+              className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white font-black text-xs shadow-lg hover:opacity-80 transition-opacity"
+              title="Back to home">
               AI
-            </div>
+            </button>
             <div>
               <h1 className="text-sm font-bold text-white leading-tight">AI Trading Dashboard</h1>
               <p className="text-[10px] text-gray-600">NSE · Options · Multi-Symbol</p>

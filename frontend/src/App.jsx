@@ -1,17 +1,42 @@
 import { useState } from 'react';
 import useTradeStream from './useTradeStream';
-import Header       from './components/Header';
-import MarketPage   from './pages/MarketPage';
-import StocksPage   from './pages/StocksPage';
-import SignalsPage  from './pages/SignalsPage';
+import Header        from './components/Header';
+import MarketPage    from './pages/MarketPage';
+import StocksPage    from './pages/StocksPage';
+import SignalsPage   from './pages/SignalsPage';
 import PortfolioPage from './pages/PortfolioPage';
-import NewsPage     from './pages/NewsPage';
+import NewsPage      from './pages/NewsPage';
+import LandingPage   from './pages/LandingPage';
+
+// Show landing page on first load unless user came back to the app directly
+function getInitialView() {
+  try {
+    // If URL hash is #/app, skip landing
+    if (window.location.hash === '#/app') return 'dashboard';
+  } catch (_) {}
+  return 'landing';
+}
 
 export default function App() {
+  const [view, setView] = useState(getInitialView);
   const { state, connected, transport, lastUpdate, error } = useTradeStream();
   const [page, setPage] = useState('market');
   const marketStatus = state.market_status || 'CLOSED';
 
+  // ── Landing page ─────────────────────────────────────────────────
+  if (view === 'landing') {
+    return (
+      <LandingPage
+        onLaunch={() => {
+          setView('dashboard');
+          try { window.location.hash = '#/app'; } catch (_) {}
+          window.scrollTo({ top: 0, behavior: 'instant' });
+        }}
+      />
+    );
+  }
+
+  // ── Dashboard ────────────────────────────────────────────────────
   const renderPage = () => {
     switch (page) {
       case 'market':    return <MarketPage    state={state} />;
@@ -34,6 +59,11 @@ export default function App() {
           page={page}
           onPageChange={setPage}
           marketStatus={marketStatus}
+          onHome={() => {
+            setView('landing');
+            try { window.location.hash = ''; } catch (_) {}
+            window.scrollTo({ top: 0, behavior: 'instant' });
+          }}
         />
 
         {/* Connection banners */}
