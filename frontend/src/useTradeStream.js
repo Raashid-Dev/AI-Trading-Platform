@@ -36,6 +36,19 @@ const EMPTY_STATE = {
   symbol_snapshot: {},
 };
 
+// Merge incoming data with previous state — never wipe fields that aren't in raw.
+// This prevents the 2-3s blank when WS sends a partial update or reconnects.
+function mergeState(prev, raw) {
+  if (!raw || typeof raw !== 'object') return prev;
+  const merged = { ...prev };
+  for (const key of Object.keys(raw)) {
+    const v = raw[key];
+    // Only overwrite if value is non-null and non-undefined
+    if (v !== null && v !== undefined) merged[key] = v;
+  }
+  return merged;
+}
+
 // ── Hook ───────────────────────────────────────────────────
 export default function useTradeStream() {
   const [state,      setState]      = useState(EMPTY_STATE);
@@ -59,7 +72,9 @@ export default function useTradeStream() {
     if (raw?.type === 'ping') return;
     if (raw?.status === 'waiting') return;
 
-    setState(prev => ({ ...EMPTY_STATE, ...raw }));
+    // Merge rather than replace — keeps previous values for any key
+    // absent from this update. Eliminates the 2-3s blank on reconnect.
+    setState(prev => mergeState(prev, raw));
     setConnected(true);
     setLastUpdate(new Date());
     setError(null);

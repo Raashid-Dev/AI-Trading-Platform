@@ -18,9 +18,13 @@ import asyncio
 import logging
 import time
 import threading
-from typing import Dict, Any
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from typing import Dict, Any, List
 from collections import defaultdict
 from typing import Optional
+
+import requests as _requests
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -283,3 +287,51 @@ async def start_background_tasks():
         log.error("Failed to start trading loop thread: %s", exc)
 
     log.info("Server started (watcher + heartbeat ready)")
+
+
+# ── News endpoint ─────────────────────────────────────────────
+_news_cache: Dict[str, Any] = {"items": [], "fetched_at": None}
+_NEWS_TTL = 300   # refresh news every 5 minutes
+
+RSS_FEEDS = [
+    ("Economic Times", "https://economictimes.indiatimes.com/markets/stocks/rss.cms"),
+    ("ET Markets",     "https://economictimes.indiatimes.com/markets/rss.cms"),
+    ("Live Mint",      "https://www.livemint.com/rss/markets"),
+]
+
+def _fetch_news() -> List[Dict]:
+    items = []
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; TradingBot/1.0)"}
+    for source, url in RSS_FEEDS:
+        try:
+            r = _requests.get(url, headers=headers, timeout=8)
+            root = ET.fromstring(r.content)
+            for item in root.findall(".//item")[:6]:
+                title   = (item.findtext("title") or "").strip()
+                link    = (item.findtext("link")  or "").strip()
+                pub     = (item.findtext("pubDate") or "").strip()
+                desc    = (item.findtext("description") or "").strip()
+                # Strip HTML tags from description
+                import re
+                desc = re.sub(r"<[^>]+>", "", desc)[:220]
+                if title:
+                    items.append({"title": title, "link": link, "date": pub,
+                                  "description": desc, "source": source})
+        except Exception as exc:
+            log.warning("News fetch failed  source=%s  err=%s", source, exc)
+    return items[:20]
+
+
+@app.get("/news")
+def get_news() -> Dict:
+    global _news_cache
+    now = time.time()
+    if _news_cache["fetched_at"] is None or (now - _news_cache["fetched_at"]) > _NEWS_TTL:
+        items = _fetch_news()
+        if items:
+            _news_cache = {"items": items, "fetched_at": now}
+        elif not _news_cache["items"]:
+            _news_cache["fetched_at"] = now   # avoid hammering on failure
+    return {"news": _news_cache["items"],
+            "fetched_at": datetime.fromtimestamp(_news_cache["fetched_at"] or now,
+                          tz=timezone.utc).isoformat() if _news_cache["fetched_at"] else None}

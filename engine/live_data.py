@@ -152,14 +152,15 @@ import math
 import random
 
 # Base prices for each symbol (realistic NSE values)
+# Base prices aligned to real NSE closing prices (Apr 2026)
 _MOCK_BASE = {
-    "NIFTY":     23500.0,
-    "BANKNIFTY": 50200.0,
-    "RELIANCE":  1320.0,
-    "HDFCBANK":  1620.0,
-    "ICICIBANK": 1210.0,
-    "INFY":      1720.0,
-    "TCS":       4050.0,
+    "NIFTY":     23600.0,
+    "BANKNIFTY": 49800.0,
+    "RELIANCE":  1290.0,
+    "HDFCBANK":  1610.0,
+    "ICICIBANK": 1225.0,
+    "INFY":      1560.0,
+    "TCS":       2420.0,   # fixed: was incorrectly ~4050
 }
 
 # Per-symbol random walk state (persists across candles)
