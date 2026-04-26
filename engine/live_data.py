@@ -138,20 +138,38 @@ def _parse_nse_index(row: dict) -> dict:
 
 
 # ── yfinance stock fetcher ────────────────────────────────────────────────────
-def _fetch_yfinance(ticker: str) -> Optional[dict]:
-    try:
-        import yfinance as yf
-        import pandas as pd
+def _yf_download_with_fallback(ticker: str) -> "pd.DataFrame":
+    """
+    Download intraday data with automatic period fallback.
+    period=1d is empty on weekends/holidays → falls back to 5d so we always
+    get the last known trading session's candles.
+    """
+    import yfinance as yf
+    import pandas as pd
 
-        df = yf.download(
-            ticker,
-            period=PERIOD,
-            interval=INTERVAL,
-            progress=False,
-            auto_adjust=True,
-        )
+    def _clean(df):
         if hasattr(df.columns, "levels"):
             df.columns = df.columns.get_level_values(0)
+        return df
+
+    # Try today's session first
+    df = _clean(yf.download(ticker, period="1d", interval=INTERVAL,
+                             progress=False, auto_adjust=True))
+    if not df.empty and len(df) >= MIN_CANDLES:
+        return df
+
+    # Weekend / holiday fallback — get last 5 trading days
+    log.info(f"1d empty for {ticker}, falling back to 5d")
+    df = _clean(yf.download(ticker, period="5d", interval=INTERVAL,
+                             progress=False, auto_adjust=True))
+    return df
+
+
+def _fetch_yfinance(ticker: str) -> Optional[dict]:
+    try:
+        import pandas as pd
+
+        df = _yf_download_with_fallback(ticker)
 
         if df.empty or len(df) < MIN_CANDLES:
             log.warning(f"yfinance returned empty/short data for {ticker}")

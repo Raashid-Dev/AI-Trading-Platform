@@ -541,13 +541,22 @@ def get_chart(symbol: str, interval: str = "5m", period: str = "1d"):
         import yfinance as yf
         import pandas as pd
 
-        df = yf.download(ticker, interval=interval, period=period,
-                         progress=False, auto_adjust=True)
-        if hasattr(df.columns, "levels"):
-            df.columns = df.columns.get_level_values(0)
+        def _dl(p):
+            df = yf.download(ticker, interval=interval, period=p,
+                             progress=False, auto_adjust=True)
+            if hasattr(df.columns, "levels"):
+                df.columns = df.columns.get_level_values(0)
+            return df
+
+        df = _dl(period)
+
+        # Weekend / holiday: 1d returns empty — fall back to 5d to show last session
+        if (df is None or df.empty) and period == "1d":
+            log.info("Chart 1d empty for %s, trying 5d fallback", sym)
+            df = _dl("5d")
 
         if df is None or df.empty:
-            raise HTTPException(503, f"No data from yfinance for {sym}")
+            raise HTTPException(503, f"No trading data available for {sym} (market may be closed)")
 
         close   = df["Close"]
         ema9s   = close.ewm(span=9,  adjust=False).mean()
